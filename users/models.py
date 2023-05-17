@@ -5,6 +5,7 @@ from django.contrib.auth.models import AbstractUser
 from shared.models import BaseModel
 from datetime import datetime, timedelta
 from django.core.validators import FileExtensionValidator
+from rest_framework_simplejwt.tokens import RefreshToken
 
 # Create your models here.
 
@@ -33,7 +34,7 @@ class User(AbstractUser, BaseModel):
     auth_type = models.CharField(max_length=31, choices=AUTH_TYPE)
     auth_status = models.CharField(max_length=31, choices=AUTH_STATUS, default=NEW)
     email = models.EmailField(null=True, unique=True)
-    phone_number = models.CharField(max_length=13, blank=True, null=True, unique=True)
+    phone = models.CharField(max_length=13, blank=True, null=True, unique=True)
     photo = models.ImageField(upload_to='user_photos/', blank=True, null=True,
                               validators=[
                                   FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png', 'heic', 'heif'])])
@@ -50,7 +51,7 @@ class User(AbstractUser, BaseModel):
         UserConfirmation.objects.create(
             user_id=self.id,
             verify_type=verify_type,
-            code=code,
+            code=code
         )
         return code
 
@@ -82,16 +83,15 @@ class User(AbstractUser, BaseModel):
             'refresh_token': str(refresh)
         }
 
+    def save(self, *args, **kwargs):
+        self.clean()
+        super(User, self).save(*args, **kwargs)
+
     def clean(self):
         self.check_email()
         self.check_username()
         self.check_pass()
         self.hashing_password()
-
-    def save(self, *args, **kwargs):
-        if not self.pk:
-            self.clean()
-        super(User, self).save(*args, **kwargs)
 
 
 PHONE_EXPIRE = 2
@@ -105,7 +105,7 @@ class UserConfirmation(BaseModel):
     )
     code = models.CharField(max_length=4)
     verify_type = models.CharField(max_length=31, choices=TYPE_CHOICES)
-    user = models.ForeignKey('users.User', on_delete=models.CASCADE, related_name='verify_code')
+    user = models.ForeignKey('users.User', on_delete=models.CASCADE, related_name='verify_codes')
     expiration_time = models.DateTimeField(null=True)
     is_confirmed = models.BooleanField(default=False)
 
@@ -113,10 +113,9 @@ class UserConfirmation(BaseModel):
         return str(self.user.__str__())
 
     def save(self, *args, **kwargs):
-        if not self.pk:
-            if self.verify_type == VIA_EMAIL:
-                self.expiration_time = datetime.now() + timedelta(minutes=EMAIL_EXPIRE)
-            else:
-                self.expiration_time = datetime.now() + timedelta(minutes=PHONE_EXPIRE)
+        if self.verify_type == VIA_EMAIL:
+            self.expiration_time = datetime.now() + timedelta(minutes=EMAIL_EXPIRE)
+        else:
+            self.expiration_time = datetime.now() + timedelta(minutes=PHONE_EXPIRE)
 
         super(UserConfirmation, self).save(*args, **kwargs)
